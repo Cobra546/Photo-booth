@@ -1,6 +1,6 @@
--- Photo Booth Supabase setup
--- The Realtime Broadcast channel is used for WebRTC signaling.
--- Run this in Supabase SQL Editor if you want room metadata/expiry and Storage RLS.
+-- Photo Booth Supabase setup for Chapter 2
+-- Run once in the Supabase SQL Editor after creating the `photo-booth` bucket.
+-- The website uses Realtime Broadcast for WebRTC signaling and Storage for strips.
 
 create table if not exists public.photo_rooms (
   id uuid primary key default gen_random_uuid(),
@@ -29,8 +29,8 @@ on public.photo_rooms for update to anon, authenticated
 using (expires_at > now())
 with check (expires_at > now());
 
--- `photo-booth` should already exist as a Storage bucket.
--- Keep it public only if you want public share URLs.
+-- The `photo-booth` Storage bucket should already exist.
+-- These policies allow the public client to upload and read strips in that bucket.
 drop policy if exists "photo booth upload" on storage.objects;
 create policy "photo booth upload"
 on storage.objects for insert to anon, authenticated
@@ -41,6 +41,15 @@ create policy "photo booth read"
 on storage.objects for select to anon, authenticated
 using (bucket_id = 'photo-booth');
 
--- Optional: enable Realtime for room metadata if you later switch from
--- Broadcast-only signaling to database change events.
-alter publication supabase_realtime add table public.photo_rooms;
+-- Safe to run repeatedly: only add the table to Realtime if it is not already there.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'photo_rooms'
+  ) then
+    alter publication supabase_realtime add table public.photo_rooms;
+  end if;
+end $$;
